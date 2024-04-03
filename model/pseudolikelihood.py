@@ -128,45 +128,6 @@ def get_npll3(msas_embedded, couplings, fields, N, q):
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 def get_npll_new(msas_embedded, param_embeddings, fields, N, q):
     ## MSAS EMBEDDED is the matrix with ones and zeros telling the 
     ## identity of the amino acids at different positions

@@ -85,8 +85,8 @@ def train(decoder, inputs_packed, eta_J, eta_h, optimizer, scaler):
 ##################################################### LOADING DATA ################################################
 
 max_msas = None
-msa_dir = "/run/media/luca/b1715ef3-045d-4bdf-b216-c211472fb5a2/split2/"
-encoding_dir ="/run/media/luca/b1715ef3-045d-4bdf-b216-c211472fb5a2/Data/InverseFolding/structure_encodings/"
+msa_dir = "./../split2/"
+encoding_dir ="./../structure_encodings/"
 
 train_dataset = EncodedProteinDataset_new(os.path.join(msa_dir, 'train'), encoding_dir, noise=0.02, max_msas=max_msas)          ## Default value of noise used
 sequence_test_dataset = EncodedProteinDataset_new(os.path.join(msa_dir, 'test/sequence'), encoding_dir, noise=0.0, max_msas=max_msas)
@@ -210,8 +210,8 @@ summary_writer.add_hparams(hyperparams, save_metrics)
 summary_writer.close()
 
 
-bk_dir= '/run/media/luca/b1715ef3-045d-4bdf-b216-c211472fb5a2/Data/InverseFolding/Intermediate_Models'
-fname_par = 'model_14_03_2024_epoch_' + str(epoch) + '.pt'
+bk_dir= './../bk_models/'
+fname_par = 'model_14_03_202_potts_epoch_' + str(epoch) + '.pt'
 
                 ##Arguments of the model, could be inferred
 args_run = {}

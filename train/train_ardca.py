@@ -10,9 +10,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import os, sys
 
-sys.path.insert(1, "./util")
-sys.path.insert(1, "./model")
-sys.path.insert(1, "./esm/")
+sys.path.insert(1, "./../util")
+sys.path.insert(1, "./../model")
+sys.path.insert(1, "./../esm/")
 #
 
 import pickle
@@ -56,8 +56,8 @@ import optuna
 ### IDEA: MSAS PROCEDURE CAN GIVE DIFFERENT OUTPUT SHAPES? ASK
 max_msas = None
 #msa_dir = "/media/luchinoprince/b1715ef3-045d-4bdf-b216-c211472fb5a2/Data/InverseFolding/msas/"
-msa_dir = "/home/silval/split2/"
-encoding_dir ="/home/silval/structure_encodings/"
+msa_dir = "./../split2/"
+encoding_dir ="./../structure_encodings/"
 
 train_dataset = EncodedProteinDataset_new(os.path.join(msa_dir, 'train'), encoding_dir, noise=0.02, max_msas=max_msas)          ## Default value of noise used
 sequence_test_dataset = EncodedProteinDataset_new(os.path.join(msa_dir, 'test/sequence'), encoding_dir, noise=0.0, max_msas=max_msas)
@@ -271,7 +271,7 @@ with tqdm(total = update_steps) as pbar: ##This is used to have the nice loading
             train_batch_losses.append(train_batch_loss) ## Here we append the lossess in the different batches within the same epoch
             
             if (epoch % 50 == 0):
-                bk_dir= '/home/silval/bk_models/'
+                bk_dir= './../bk_models/'
                 fname_par = 'model_22_01_2024_epoch_ardca_scaled_' + str(epoch) + '.pt'
 
                 ##Arguments of the model, could be inferred
@@ -320,7 +320,7 @@ with tqdm(total = update_steps) as pbar: ##This is used to have the nice loading
 
 
 ####################### SAVE FINAL MODEL #############################
-bk_dir= '/home/silval/bk_models/'
+bk_dir= './../bk_models/'
 fname_par = 'model_22_01_2024_epoch_ardca_scaled_final.pt'
 
 ##Arguments of the model, could be inferred
