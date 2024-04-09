@@ -47,7 +47,7 @@ def dynamic_cluster(batch_size, q, msas, encodings, max_units):
 
 
 ############################### OLD LOADER ######################################
-def collate_fn_old(batch, q, batch_size, batch_msa_size, max_units=100):
+def collate_fn_old(batch, q, batch_size, batch_msa_size, max_units=None):
     """ Old Collate function for data loader, no permutation. 
     """
     batch_size = len(batch)
@@ -69,3 +69,4 @@ def collate_fn_old(batch, q, batch_size, batch_msa_size, max_units=100):
     padding_mask = msas[:, 0, :] == q
     ### I return in this weird format to have consistency with the dynamic loader
     return (batch_size, [(msas, encodings, padding_mask)])
+

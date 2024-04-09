@@ -1,7 +1,6 @@
 import torch
 from torch.nn import Linear, TransformerEncoderLayer, LayerNorm
 from torchvision.ops import MLP
-from torch.autograd import profiler 
 import numpy as np
 
 from torch.nn.functional import softmax
@@ -21,11 +20,8 @@ class PottsDecoder(torch.nn.Module):
         self.n_param_heads = n_param_heads
         self.dropout = dropout
 
-        #print(self.input_encoding_dim)
-        #print(self.d_model)
         self.input_MLP = Linear(self.input_encoding_dim, self.d_model)
-        #self.input_MLP = MLP(self.input_encoding_dim, hidden_channels=[self.d_model, self.d_model], bias=False, norm_layer=LayerNorm, dropout=0.0, inplace=False)
-        #self_input_norm = LayerNorm()
+
 
         self.attention_layers = torch.nn.ModuleList([])
         self.relu = torch.nn.ReLU()
@@ -34,17 +30,9 @@ class PottsDecoder(torch.nn.Module):
                                                       dropout=self.dropout, batch_first=True)
             self.attention_layers.append(attention_layer)
 
-        ## Here we do a projection so that we can have the sum of the rank-one matrices as we want
 
-        #self.P = MLP(self.d_model, hidden_channels=[self.d_model, self.d_model*self.n_param_heads], bias=False, norm_layer=LayerNorm, dropout=0.0, inplace=False)
-
-        #self.P = torch.nn.Parameter(torch.randn(self.n_param_heads, self.d_model, self.d_model), requires_grad=True)
         
         self.P = Linear(self.d_model, self.n_param_heads*self.d_model, bias=False)   ## this uses a more sensible initialization
-        
-        #self.P.retain_grad()
-        #self.P.register_hook(lambda x: print("backward called"))
-        ###
         self.output_linear = Linear(self.d_model, self.q)
 
         self.field_linear = Linear(self.q, self.q)
@@ -94,24 +82,13 @@ class PottsDecoder(torch.nn.Module):
             embeddings = attention_layer(embeddings, src_key_padding_mask=padding_mask)
             embeddings = self.relu(embeddings)
 
-        # (1, n_param_heads, 1, d_model, d_model) x (B, 1, N, d_model, 1) -> (B, n_param_heads, N, d_model)
-        #with profiler.record_function("Projection pass"):
-        ##OLD VERSION
-        #param_embeddings = self.P.unsqueeze(0).unsqueeze(2) @ embeddings.unsqueeze(1).unsqueeze(4)
-        #param_embeddings = torch.transpose(self.P.reshape(self.d_model, self.d_model, self.n_param_heads), 0, 2).unsqueeze(0).unsqueeze(2) @ embeddings.unsqueeze(1).unsqueeze(4)
-        #param_embeddings = param_embeddings.squeeze()
-        #param_embeddings.register_hook(lambda x: print("param embeddings backward called"))
-        #breakpoint()
-
         param_embeddings = torch.transpose(self.P(embeddings).reshape(B, N, self.n_param_heads, self.d_model), 1, 2)
-        #embeddings.register_hook(lambda x: print("embeddings backward called"))
 
         # apply relu
         param_embeddings = self.relu(param_embeddings)
 
         # (B, n_param_heads, N, q)
         param_embeddings = self.output_linear(param_embeddings)
-        #with profiler.record_function("Get params"):
         couplings, fields = self._get_params(param_embeddings, N, padding_mask)
 
         return couplings, fields
@@ -132,11 +109,6 @@ class PottsDecoder(torch.nn.Module):
         ## To normalize later computations
         param_embeddings = param_embeddings * self.n_param_heads**(-1/4)
 
-        # flatten fields
-        #fields = fields.view(-1, N * self.q)
-
-        # flatten to (B, n_param_heads, N*q)
-        #param_embeddings = param_embeddings.flatten(start_dim=2, end_dim=3)
 
 
         return param_embeddings, fields
@@ -154,14 +126,6 @@ class PottsDecoder(torch.nn.Module):
         for attention_layer in self.attention_layers:
             embeddings = attention_layer(embeddings, src_key_padding_mask=padding_mask)
             embeddings = self.relu(embeddings)
-
-        ## self.P(embeddings): (B, N, d_model) ---> (B, N, d_model*n_param_heads)
-        ## We the reshape to (B, N, d_model, n_param_heads)
-
-
-        ### THIS OPERATION SEEMS TO BE SUPER EXPENSIVE COMPUTATIONALLY, DON'T KNOW WHY
-        #param_embeddings = self.P.unsqueeze(0).unsqueeze(2) @ embeddings.unsqueeze(1).unsqueeze(4)
-        #param_embeddings = param_embeddings.squeeze()
 
         param_embeddings = torch.transpose(self.P(embeddings).reshape(B, N, self.n_param_heads, self.d_model), 1, 2) #@ embeddings.unsqueeze(1).unsqueeze(4)
         # (1, n_param_heads, 1, d_model, d_model) x (B, 1, N, d_model, 1) -> (B, n_param_heads, N, d_model)
@@ -201,14 +165,6 @@ class PottsDecoder(torch.nn.Module):
         for attention_layer in self.attention_layers:
             embeddings = attention_layer(embeddings, src_key_padding_mask=padding_mask)
             embeddings = self.relu(embeddings)
-
-        ## self.P(embeddings): (B, N, d_model) ---> (B, N, d_model*n_param_heads)
-        ## We the reshape to (B, N, d_model, n_param_heads)
-
-
-        ### THIS OPERATION SEEMS TO BE SUPER EXPENSIVE COMPUTATIONALLY, DON'T KNOW WHY
-        #param_embeddings = self.P.unsqueeze(0).unsqueeze(2) @ embeddings.unsqueeze(1).unsqueeze(4)
-        #param_embeddings = param_embeddings.squeeze()
 
         param_embeddings = torch.transpose(self.P(embeddings).reshape(B, N, self.n_param_heads, self.d_model), 1, 2) #@ embeddings.unsqueeze(1).unsqueeze(4)
         # (1, n_param_heads, 1, d_model, d_model) x (B, 1, N, d_model, 1) -> (B, n_param_heads, N, d_model)
@@ -261,15 +217,12 @@ class PottsDecoder(torch.nn.Module):
         assert B == padding_mask.shape[0]
         assert N == padding_mask.shape[1]
         
-        #with profiler.record_function("Embeddings"):
         embeddings = self.input_MLP(encodings)
-        #with profiler.record_function("Attention Layers"):
         for attention_layer in self.attention_layers:
             embeddings = attention_layer(embeddings, src_key_padding_mask=padding_mask)
             embeddings = self.relu(embeddings)
 
         param_embeddings = torch.transpose(self.P(embeddings).reshape(B, N, self.n_param_heads, self.d_model), 1, 2)
-        #embeddings.register_hook(lambda x: print("embeddings backward called"))
 
         # apply relu
         param_embeddings = self.relu(param_embeddings)
@@ -347,7 +300,6 @@ class PottsDecoder(torch.nn.Module):
                 Ham = torch.zeros(n_samples, q).to(device)
                 Ham += fields[pos, :]
                 for acc in range(pos):
-                    ### Can we also vectorize this? Not sure it is going to help that much
                     for aa in range(q):
                         second_idx = acc*q + samples[:, acc]
                         Ham[:, aa] += couplings[pos*q+aa, second_idx]#.unsqueeze(-1)
@@ -360,8 +312,6 @@ class PottsDecoder(torch.nn.Module):
     def sample_ardca_full_scaled(self, encodings, padding_mask, device='cpu', n_samples=1000):
         """Sampler for arDCA, currently works for many sequences together.
             NB: This function should not be used for standard Potts. Works for scaled model"""
-            ## Put model in evaluation model
-        #device = 0
         ############# MOVE EVERYTHING TO CORRECT DEVICE #######
         self.eval()
         self = self.to(device)
@@ -402,39 +352,10 @@ class PottsDecoder(torch.nn.Module):
                         second_idx = acc*q + samples[:, acc]
                         Ham[:, aa] += couplings[pos*q+aa, second_idx]#.unsqueeze(-1)
                 p_pos = softmax(Ham, dim=1)
-                #p_pos = softmax(-Ham, dim=0)
                 samples[:, pos] = Categorical(p_pos).sample()
         return samples
     
-    def get_likelihood_ardca_full(self, encodings, padding_mask, sequences, device='cpu'):
-        """Evaluate the likelihood, up to a normalizing constant, of a given set of samples. 
-        Since we want to just order these sequences we don't need the normalizing constant.
-        Currently this function works only for a structure batch of B=1"""
-            ## Put model in evaluation model
-        #device = 0
-        ############# MOVE EVERYTHING TO CORRECT DEVICE #######
-        self.eval()
-        self = self.to(device)
-        encodings = encodings.to(device)
-        padding_mask = padding_mask.to(device)
-        B, N, _ = encodings.shape
-        N_seq, N = sequences.shape
-        lliks = torch.zeros(N_seq, dtype=torch.int).to(device)
-      
-        q = self.q
-        ## fields shape: (B,N,q), we will consider B=1 for the moment
-        ## Couplings shape: (B, N*q, N*q)
-        couplings, fields = self.forward_ardca(encodings, padding_mask)
-        ##############################################################################
-        couplings = couplings[0, :, :] #### This simplifies
-        fields = fields[0,:].reshape(N, q)
-        p_pos = softmax(fields[0], dim=0)
-        #with torch.no_grad():
-            #fields_comp = fields.   
-        #lliks += #Categorical(p_pos).sample((n_samples,))
 
-
-        #return samples
     
     
     

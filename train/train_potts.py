@@ -1,10 +1,9 @@
-import numpy as np
 import os, sys
-
-sys.path.insert(1, "./../util")
-sys.path.insert(1, "./../model")
+import numpy as np
+sys.path.insert(1, "./../../util")
+sys.path.insert(1, "./../../model")
 from encoded_protein_dataset_new import get_embedding, EncodedProteinDataset_new
-from pseudolikelihood import get_npll2, get_npll_indep
+from pseudolikelihood import get_npll2
 from dynamic_loader import collate_fn_old
 import torch, torchvision
 
@@ -84,12 +83,13 @@ def train(decoder, inputs_packed, eta_J, eta_h, optimizer, scaler):
 ###################################################################################################################
 ##################################################### LOADING DATA ################################################
 
-max_msas = None
-msa_dir = "./../split2/"
-encoding_dir ="./../structure_encodings/"
+max_msas = 10
+msa_dir = "./../../split2/"
+encoding_dir ="./../../structure_encodings/"
 
 train_dataset = EncodedProteinDataset_new(os.path.join(msa_dir, 'train'), encoding_dir, noise=0.02, max_msas=max_msas)          ## Default value of noise used
-sequence_test_dataset = EncodedProteinDataset_new(os.path.join(msa_dir, 'test/sequence'), encoding_dir, noise=0.0, max_msas=max_msas)
+#sequence_test_dataset = EncodedProteinDataset_new(os.path.join(msa_dir, 'test/sequence'), encoding_dir, noise=0.0, max_msas=max_msas)
+sequence_test_dataset = train_dataset
 structure_test_dataset = EncodedProteinDataset_new(os.path.join(msa_dir, 'test/structure'), encoding_dir, noise=0.0, max_msas=max_msas)
 superfamily_test_dataset = EncodedProteinDataset_new(os.path.join(msa_dir, 'test/superfamily'), encoding_dir, noise=0.0, max_msas=max_msas)
 

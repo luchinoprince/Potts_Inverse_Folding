@@ -172,23 +172,15 @@ def sample_esm_batch(model, coords, n_samples=1000, temperature=1.0, confidence=
             logits = logits.squeeze(-1)#.transpose(0,1)
             logits /= temperature
             probs = F.softmax(logits, dim=-1)
-            #if sampled_tokens[0, i] == mask_idx:
             sampled_tokens[:, i] = torch.multinomial(probs, 1).squeeze(-1)
             sampled_seq = sampled_tokens[0, 1:]
 
 
-    #samples_esm = torch.zeros(n_samples, L)
     samples_str = []
     for idx in range(n_samples):
         sampled_seq = sampled_tokens[idx, 1:]
         sampled_str = ''.join([model.decoder.dictionary.get_tok(a) for a in sampled_seq])
         samples_str.append(sampled_str)
-        #char_idx = 0
-        #for char in sampled_str:
-        #    samples_esm[idx, char_idx] = aa_index[char]
-        #   char_idx+=1
-    #return samples_esm, samples_str
-    ### Let us clear up the cache of the GPU
     torch.cuda.empty_cache()
     return samples_str
 
@@ -273,7 +265,6 @@ def sample_esm_batch2(model, coords, n_samples=1000, temperature=1.0, confidence
                 sampled_seq = sampled_tokens[0, 1:]
 
 
-        #samples_esm = torch.zeros(n_samples, L)
         for idx in range(samples_batch):
             sampled_seq = sampled_tokens[idx, 1:]
             sampled_str = ''.join([model.decoder.dictionary.get_tok(a) for a in sampled_seq])
@@ -282,11 +273,6 @@ def sample_esm_batch2(model, coords, n_samples=1000, temperature=1.0, confidence
                 samples_str.append(sampled_str)
             else:
                 continue
-            #char_idx = 0
-            #for char in sampled_str:
-            #    samples_esm[idx, char_idx] = aa_index[char]
-            #   char_idx+=1
-        #return samples_esm, samples_str
     ### Let us clear up the cache of the GPU
     torch.cuda.empty_cache()
     return samples_str
@@ -294,7 +280,13 @@ def sample_esm_batch2(model, coords, n_samples=1000, temperature=1.0, confidence
 
 def align_esm(samples_esm_str, msa):
     """ This function takes a esm sample from a given structure and re-aligns its
-    generated sequences using the MSA of the strucutre."""
+    generated sequences using the MSA of the strucutre.
+
+    Args:
+    samples_esm_str: list of samples in character form coming from the esm samples which need re-alignment
+    msa: msa corresponding to the native structure to which we have to re-align
+    
+    """
     M, L = msa.size()
     alphabet_hmm = pyhmmer.easel.Alphabet.amino()
     ### DIGITIZE THE MSA SO THAT IT CAN BE USED PY PYHMMER
@@ -328,3 +320,120 @@ def align_esm(samples_esm_str, msa):
     ### Such padding are NOT aligned, hence are useless for our purposes. 
     msa_aligned = clean_insertions(msa_aligned, L)
     return msa_aligned
+
+def get_samples_esm(model, coords, idx_bk, test_dataset, native_seq_num, pdb_id, percs, nfill=25, device=0):
+    """This function allows to generate samples from the esm1f model at the desired hamming distances from the native sequence. 
+    It does so by starting to generate samples at temperature 1, and then sequentially increasing the temperature of the model by 0.1 to 
+    fill all the necessary bins. It reaches a maximum temperature of 4, which can be easily changed.
+
+    Args:
+    model: the esm1f model
+    coords: coords: N x 3 x 3 list representing one backbone, where N is the length of the sequence
+    idx_bk: index in the training dataset of the msa corresponding to the native sequence
+    test_datast: test dataset under consideration
+    native_seq_num: array with the native sequence in numerical format
+    pdb_name: name of the structure to allow loading of the respective pdb file
+    percs: vector indicating the bins that define how distances are grouped.
+    nfill: number of sequences per bin in 'percs', default is 25.
+    device: device where to perform computations, default is 0(i.e GPU). CPU will be significantly slower for this function.
+
+    """
+
+    model.eval();
+    model.to(device)
+
+    res = {}
+
+    samples_esm_full = []
+
+
+    ##############################    GET SAMPLES    ##############################
+    ###############################################################################
+    filled = False
+    temperature = 1.0
+    while not filled:
+        print(f"I am sampling at temperature:{temperature}")
+        filled = True
+        ##############################    GET POTENTIAL SAMPLES    ###########################
+        ######################################################################################
+        samples_esm_str = sample_esm_batch2(model, coords, temperature=temperature, device=device)
+        
+        ### ALIGN THE SAMPLES
+        msa = torch.tensor(test_dataset[idx_bk][0], dtype=torch.long)
+        M,N=msa.shape
+        if len(native_seq_num)!=N:
+            raise Exception("ERROR")
+        samples_esm_aligned = torch.tensor(align_esm(samples_esm_str, msa), dtype=torch.long)
+        samples_esm_full.append((pdb_id, samples_esm_aligned))
+        M_esm = samples_esm_aligned.shape[0]
+        
+        
+        ##############################    COMPUTE DISTANCES    ##############################
+        #####################################################################################
+        distances = []
+        distances_full = []
+
+        for j in range(M_esm):
+            distances.append(1 - torch.sum(samples_esm_aligned[j,:] == native_seq_num).item()/N)
+            
+        distances_full.append((pdb_id, distances))
+        
+        
+        ##############################    FILL RESULT    ###################################
+        ####################################################################################
+        it = 0
+        for perc in percs:
+            if str(perc) in res.keys():
+                print("I am adding samples\n")
+                if res[str(perc)].shape[0] < nfill: ### I have not filled this level yet
+                    missing = nfill - res[str(perc)].shape[0] 
+                    if it==0:
+                        mask = np.array(distances_full[0][1]) < perc
+                        candidate_sequences = samples_esm_aligned[mask, :]
+                        adding = min(candidate_sequences.shape[0], missing)
+                        selected_sequences = candidate_sequences[0:adding, :]
+                        res[str(perc)] = np.concatenate((res[str(perc)], selected_sequences), axis=0)
+
+                        if adding != missing:
+                            filled = False
+                    else:
+                        mask_right = np.array(distances_full[0][1]) < perc
+                        mask_left = np.array(distances_full[0][1]) >= percs[it-1]
+                        mask = mask_left * mask_right
+                        candidate_sequences = samples_esm_aligned[mask, :]
+                        adding = min(candidate_sequences.shape[0], missing)
+                        selected_sequences = candidate_sequences[0:adding, :]
+                        res[str(perc)] = np.concatenate((res[str(perc)], selected_sequences), axis=0)
+                        
+                        if adding != missing:
+                            filled = False
+                            
+            else: ### This means I am at my first loop
+                print("I am sampling for the first time\n")
+                missing = nfill 
+                if it==0:
+                    mask = np.array(distances_full[0][1]) < perc
+                    candidate_sequences = samples_esm_aligned[mask, :]
+                    adding = min(candidate_sequences.shape[0], missing)
+                    selected_sequences = candidate_sequences[0:adding, :]
+                    res[str(perc)] = selected_sequences
+                    if adding != missing:
+                        filled = False
+                else:
+                    mask_right = np.array(distances_full[0][1]) < perc
+                    mask_left = np.array(distances_full[0][1]) >= percs[it-1]
+                    mask = mask_left * mask_right
+                    candidate_sequences = samples_esm_aligned[mask, :]
+                    adding = min(candidate_sequences.shape[0], missing)
+                    selected_sequences = candidate_sequences[0:adding, :]
+                    res[str(perc)] = selected_sequences
+                    
+                    if adding != missing:
+                        filled = False
+            it+=1
+        temperature += 0.1
+        if temperature > 4.0:
+            #### I set a maximum temperature
+            filled=True
+        
+    return res

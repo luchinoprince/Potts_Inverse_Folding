@@ -6,64 +6,44 @@
 ############################### LOADING LIBRARIES ##############################################
 ################################################################################################
 import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
 import os, sys
 
 sys.path.insert(1, "./../util")
 sys.path.insert(1, "./../model")
-sys.path.insert(1, "./../esm/")
+sys.path.insert(1, "./../../esm/")
 #
 
 import pickle
-from encoded_protein_dataset_new import get_embedding, EncodedProteinDataset_new#, collate_fn_new#, dynamic_collate_fn
-from dynamic_loader import dynamic_collate_fn, collate_fn_old
+from encoded_protein_dataset_new import get_embedding, EncodedProteinDataset_new
+from dynamic_loader import dynamic_collate_fn, dynamic_cluster
 from pseudolikelihood import get_npll2, get_npll_indep
 from pseudolikelihood import get_npll2, get_npll, get_npll3
 import torch, torchvision
-from torch.nn.utils import clip_grad_norm_
 from potts_decoder import PottsDecoder
 from torch.utils.data import DataLoader, RandomSampler
 from functools import partial
-import biotite.structure
-from biotite.structure.io import pdbx, pdb
-from biotite.structure.residues import get_residues
-from biotite.structure import filter_backbone
-from biotite.structure import get_chains
-from biotite.sequence import ProteinSequence
-from typing import Sequence, Tuple, List
-import scipy
 from tqdm import tqdm
 import csv
 import time
 from torch.utils.tensorboard import SummaryWriter
 
 
-import esm
-from esm.inverse_folding import util
-import esm.pretrained as pretrained
-from ioutils import read_fasta, read_encodings
-from torch.nn.utils.rnn import pad_sequence
-from collections import defaultdict
-from Bio import SeqIO
 
-from dynamic_loader import dynamic_collate_fn, dynamic_cluster
-import optuna
 
 ####################################################################################################
 ################################## LOAD THE DATA ###################################################
 ####################################################################################################
 ### IDEA: MSAS PROCEDURE CAN GIVE DIFFERENT OUTPUT SHAPES? ASK
-max_msas = None
+max_msas = 10
 #msa_dir = "/media/luchinoprince/b1715ef3-045d-4bdf-b216-c211472fb5a2/Data/InverseFolding/msas/"
-msa_dir = "./../split2/"
-encoding_dir ="./../structure_encodings/"
+msa_dir = "./../../split2/"
+encoding_dir ="./../../structure_encodings/"
 
 train_dataset = EncodedProteinDataset_new(os.path.join(msa_dir, 'train'), encoding_dir, noise=0.02, max_msas=max_msas)          ## Default value of noise used
-sequence_test_dataset = EncodedProteinDataset_new(os.path.join(msa_dir, 'test/sequence'), encoding_dir, noise=0.0, max_msas=max_msas)
+#sequence_test_dataset = EncodedProteinDataset_new(os.path.join(msa_dir, 'test/sequence'), encoding_dir, noise=0.0, max_msas=max_msas)
 structure_test_dataset = EncodedProteinDataset_new(os.path.join(msa_dir, 'test/structure'), encoding_dir, noise=0.0, max_msas=max_msas)
 superfamily_test_dataset = EncodedProteinDataset_new(os.path.join(msa_dir, 'test/superfamily'), encoding_dir, noise=0.0, max_msas=max_msas)
-print(f"I have loaded the train and test datasets: train:{len(train_dataset)}, seq:{len(sequence_test_dataset)}, struc:{len(structure_test_dataset)}, super:{len(superfamily_test_dataset)}")
+#print(f"I have loaded the train and test datasets: train:{len(train_dataset)}, seq:{len(sequence_test_dataset)}, struc:{len(structure_test_dataset)}, super:{len(superfamily_test_dataset)}")
 
 batch_structure_size_train = 8   ### I think with empty GPU we can go up to 16 easily
 batch_structure_size= 8          ### 8 should still be manageable   
@@ -170,7 +150,6 @@ def get_loss_loader(decoder, loader, eta_J, eta_h):
         npll_full = 0
         for inputs in inputs_packed:
             mini_batch_size = inputs[0].shape[0]
-            #_, npll = get_loss_indep(decoder, inputs, eta_J, eta_h) ## For independent model without couplings
             _, npll = get_loss(decoder, inputs, eta_J, eta_h)
             npll_full += npll*mini_batch_size/effective_batch_size
         losses.append(npll_full)
@@ -186,11 +165,9 @@ def train(decoder, inputs_packed, eta_J, eta_h, optimizer, scaler):
     with torch.cuda.amp.autocast():  ## autocasting mixed precision
         for inputs in inputs_packed[1]:
             mini_batch_size = inputs[0].shape[0]
-            #loss_penalty, train_batch_loss = get_loss_indep(decoder, inputs, eta_J, eta_h)    ## get the current loss for the batch this is for the independent training
             loss_penalty, train_batch_loss = get_loss(decoder, inputs, eta_J, eta_h)
             loss_penalty = loss_penalty * mini_batch_size/effective_batch_size
             train_batch_loss = train_batch_loss * mini_batch_size/effective_batch_size
-            #loss_penalty.backward()                         ## Get gradients
             scaler.scale(loss_penalty).backward()
             loss_penalty_full += loss_penalty.detach()
             train_loss_full += train_batch_loss
@@ -198,7 +175,6 @@ def train(decoder, inputs_packed, eta_J, eta_h, optimizer, scaler):
     
     scaler.step(optimizer)
     scaler.update()
-    #optimizer.step()   
 
     return loss_penalty_full, train_loss_full
 
@@ -208,21 +184,15 @@ def train_stable(decoder, inputs_packed, eta_J, eta_h, optimizer, scaler):
     loss_penalty_full = 0
     train_loss_full = 0
     optimizer.zero_grad(set_to_none=True)                           ## set previous gradients to 0
-    #with torch.cuda.amp.autocast():  ## autocasting mixed precision
     for inputs in inputs_packed[1]:
         mini_batch_size = inputs[0].shape[0]
-        #loss_penalty, train_batch_loss = get_loss_indep(decoder, inputs, eta_J, eta_h)    ## get the current loss for the batch this is for the independent training
         loss_penalty, train_batch_loss = get_loss(decoder, inputs, eta_J, eta_h)
         loss_penalty = loss_penalty * mini_batch_size/effective_batch_size
         train_batch_loss = train_batch_loss * mini_batch_size/effective_batch_size
         loss_penalty.backward()                         ## Get gradients
-        #scaler.scale(loss_penalty).backward()
         loss_penalty_full += loss_penalty.detach()
         train_loss_full += train_batch_loss
     
-    
-    #scaler.step(optimizer)
-    #scaler.update()
     optimizer.step()   
 
     return loss_penalty_full, train_loss_full
@@ -264,7 +234,6 @@ with tqdm(total = update_steps) as pbar: ##This is used to have the nice loading
 
             loss_penalty, train_batch_loss = train_stable(decoder, inputs_packed, eta_J, eta_h, optimizer, scaler)
             loss_penalty.detach()
-            #optimizer.step()                                ## Do a step of GD
             update_step += 1                                ## Increase update step (the update steps will count also different batches within the same epoch)
             epoch = update_step / len(train_loader)
             
