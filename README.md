@@ -20,7 +20,9 @@ Repository reproducing some of the codes of the paper "Uncovering sequence diver
 
 
 The repository has different folders which allow for the different steps necessary to train or test the model as shown in the paper.
-## Dataset creation
+## Dataset creation (Currently resolving a reported bug)
+
+The below instructions have been reported to raise some dimension errors in the code. The bugs are on the process of being resolved, in the mean time anyone can download the full zipped data at the following link: https://www.dropbox.com/scl/fi/bac5zrwjnlskdqo7eg9pm/IF.tar?rlkey=gtusz8kxhghgndd6jw57j49wa&st=9qrs6boc&dl=0.
 
 This section will require roughly $120Gbs$ of memory while the execution time depends on the CPU resources avaiable to [MMseqs2](https://github.com/soedinglab/MMseqs2). We ran it on _intel I9-13900K/KF 5.8 Ghz_, and this step took roughly a day to complete. The codes can be found in the folder *data_creation*. The requirements to run the code are:
 - Download the _Uniref50_ dataset which can be found on the [UniProt website](https://www.uniprot.org/help/downloads).
