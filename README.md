@@ -33,7 +33,10 @@ Once this is done, and the necessary dataset and repositiory are placed in paths
 1. run the bash file _create_msas.sh_ to create all the necessary MSA for the different structures
 2. run the python code _train_test_split.py_ to split the different MSAs into the train test split outlined
 3. Run the python notebook _get_numerical_MSA.ipynb_ to get all the MSA's in numerical format, so that they are ready to use by the model and don't have to be converted at every update step of the training. 
-4. Run the python notebook _get_encodings.ipynb_ to get the **esm1f** pretrained encodings to feed to one of our Potts decoders; 
+4. Run the python notebook _get_encodings.ipynb_ to get the **esm1f** pretrained encodings to feed to one of our Potts decoders;
+
+## Model checkpoints
+The pairwise and autoregressive Potts models used in the paper can be easily downloaded from this [link](https://www.dropbox.com/scl/fo/nibnn4tcjemcvco2p13j9/AHpnhtcwuwboGConFA1G8TA?rlkey=1yofr3kw69o4130gfqb4dx4li&st=o3zcxy69&dl=0). **NB**: The user must make sure to be using the appropriate functions for the appropriate ckpt, meaning for the autoregressive ckpt, one needs to make sure to use the correct forward functions, hence not the ones for the pairwise model (and viceversa).
 
 ## Training models
 
